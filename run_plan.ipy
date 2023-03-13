@@ -1,9 +1,16 @@
 import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
-
+import datetime
+from tabulate import tabulate
 
 # This code will estimate the time requirements for running a DNP experiment at JLab
+
+outFile = open('RunPlan.txt','w')
+
+
+outStr = "Assumptions for Scheduling:     (All times given in HH:MM:SS)\n"
+
 
 # For the b1 experiment proposal, there were 720 total PAC hours requested 
 # Split up for the SHMS:
@@ -32,11 +39,22 @@ d = 4e15 # e/cm^2 = dose between anneals
 A = np.pi*r**2 #cm^2 = area of face of target cup
 e = d*A # e/anneal = # of electrons between anneals
 eps = 1.602e-10 # nA = current of 1 e/s
-t_s = e*eps/I # s = time per anneal in seconds @ 100% efficiency
+t_s = round(e*eps/I) # s = time per anneal in seconds @ 100% efficiency
 t_h = t_s/(60*60) # h = time per anneal in hours @ 100% efficiency
+t_btw_anneal = datetime.timedelta(seconds=t_s)
 
-print('Time Between Anneals:',round(t_h,2),'hours')
-print('Time required for target material change:','4','hours')
+outStr += '   Beam Current: ' + str(I) +' nA\n'
+outStr += '   Target Cup Radius: ' + str(r) + ' cm\n'
+outStr += '   Dose between anneals: ' + '{:.2e}'.format(d) + ' e/cm^2\n'
+outStr += '   Time Between Anneals: '+ str(t_btw_anneal) + '\n'
+
+# print('','Beam Current:',I,'nA')
+# print('','Target Cup Radius:',r,'cm')
+# print('','Dose between anneals:','{:.2e}'.format(d),'e/cm^2')
+# print('','Time Between Anneals:',round(t_h,2),'hours')
+
+t_matChange = datetime.timedelta(hours=(4))
+outStr += '   Time required for target material change: ' + str(t_matChange) + '\n'
 
 # ^^^^ Annealing ^^^^
 
@@ -50,16 +68,25 @@ print('Time required for target material change:','4','hours')
 # cycles, assuming a way of 4 to 10 time constants (98% - 99.995%).
 # During the 3 spin-ups in Hall B in Feb/March 2023, they waited 7, 8, and 3 hours.
 
-print('Time required for vector pol. spin-ups:','3-8', 'hours')
-print('Time required for target TE measurements:','4','hours')
-print('Time required for packing fraction/dilution runs:','1','hour')
+t_vecSpinUp = datetime.timedelta(hours=6) # Estimates range from 3-8 hours. Taking 6 as average of above.
+t_btw_vecSpinUp = datetime.timedelta(hours=48)
+t_TE = datetime.timedelta(hours=4)
+t_pf = datetime.timedelta(hours=1)
+outStr += '   Time required for vector pol. spin-ups: ' + str(t_vecSpinUp) + '\n'
+outStr += '   Time between each vector pol. spin-up: ' + str(t_btw_vecSpinUp) + '\n'
+outStr += '   Time required for target TE measurements:' + str(t_TE) + '\n'
+outStr += '   Time required for packing fraction/dilution runs: ' + str(t_pf) + '\n'
 # ^^^^ Vector Pol. Cycles ^^^^
 
 # vvvv Beam Overhead vvvv
-print('Time required for BCM calibration:','2','hours')
-print('Time required for each Optics run:','4','hours')
-print('Time required for each Linac change:','8','hours')
-print('Time required for each Momentum/angle change:','2','hours')
+t_BCM = datetime.timedelta(hours=2)
+t_optics = datetime.timedelta(hours=4)
+t_linacChange = datetime.timedelta(hours=8)
+t_specChange = datetime.timedelta(hours=2)
+outStr += '   Time required for BCM calibration: ' + str(t_BCM) + '\n'
+outStr += '   Time required for each Optics run: ' + str(t_optics) + '\n'
+outStr += '   Time required for each Linac change: ' + str(t_linacChange) + '\n'
+outStr += '   Time required for each Spectrometer Momentum/angle change: ' + str(t_specChange) + '\n'
 # ^^^^ Beam Overhead ^^^^
 
 # vvvv Tensor Pol. Cycle vvvv
@@ -76,6 +103,242 @@ print('Time required for each Momentum/angle change:','2','hours')
 # too fast without giving time for the overall Boltzmann area to build the FOM 
 # drops over time. 
 
-t_to_0 = 10 # seconds
-t_to_Pzz = 30 # seconds
+t_to_0 = datetime.timedelta(seconds=10)
+t_to_Pzz = datetime.timedelta(seconds=30)
+dt_between_Pzz_change = datetime.timedelta(minutes=10)
 
+outStr += '   Time to Tensor Enhance: ' + str(t_to_Pzz) + "\n"
+outStr += '   Time to Tensor Unpol: ' + str(t_to_0) + "\n"
+outStr += '   Time Between Tensor Pol/Unpol Cycles: ' + str(dt_between_Pzz_change) + "\n"
+# ^^^^ Tensor Pol. Cycle ^^^^
+
+
+
+print('Writing assumptions...')
+outFile.write(outStr)
+
+# vvvv Kinematics vvvv
+
+print('Writing kinematics...')
+print("\n\nKinematics:",file=outFile)
+kineTable = []
+
+AzzAPAC = datetime.timedelta(days=(1))
+AzzBPAC = datetime.timedelta(days=(8))
+AzzCPAC = datetime.timedelta(days=(25))
+b1APAC = datetime.timedelta(days=(6))
+b1BPAC = datetime.timedelta(days=(9))
+b1CPAC = datetime.timedelta(days=(15))
+AzzAReal = datetime.timedelta(days=(2*1))
+AzzBReal = datetime.timedelta(days=(2*8))
+AzzCReal = datetime.timedelta(days=(2*25))
+b1AReal = datetime.timedelta(days=(2*6))
+b1BReal = datetime.timedelta(days=(2*9))
+b1CReal = datetime.timedelta(days=(2*15))
+#        Sett.   Spec.   E0  Q^2  E'  Theta Spec    E0  Q^2 E'  Theta PAC Time, Real Time
+AzzA = ["Azz-A","SHMS", 2.2, 0.2,2.15,10.9,"HMS" , 2.2, 0.3,2.11,14.9,AzzAPAC,AzzAReal]
+AzzB = ["Azz-B","SHMS", 6.6, 0.7,6.35, 7.5,"HMS" , 6.6, 1.8,5.96,12.3,AzzBPAC,AzzBReal]
+AzzC = ["Azz-C","SHMS", 8.8, 1.5,8.36, 8.2,"HMS" , 8.8, 2.9,7.26,12.2,AzzCPAC,AzzCReal]
+b1A  = ["b1-A" ,"SHMS",11.0,1.21,6.70,7.35,"HMS" ,11.0,3.81,7.31,12.5,b1APAC,b1AReal]
+b1B  = ["b1-B" ,"SHMS",11.0,2.00,7.45,8.96,"HMS" ,11.0,3.81,7.31,12.5,b1BPAC,b1BReal]
+b1C  = ["b1-C" ,"SHMS",11.0,2.58,7.96,9.85,"HMS" ,11.0,3.81,7.31,12.5,b1CPAC,b1CReal]
+
+#                 Setting Spec     E0        Q^2    E'      Theta   PAC Time Real Time
+kineTable.append([AzzA[0],AzzA[1], AzzA[2], AzzA[3],AzzA[4],AzzA[5], AzzA[11],AzzA[12]])
+kineTable.append([AzzA[0],AzzA[6], AzzA[7], AzzA[8],AzzA[9],AzzA[10],AzzA[11],AzzA[12]])
+kineTable.append([AzzB[0],AzzB[1], AzzB[2], AzzB[3],AzzB[4],AzzB[5], AzzB[11],AzzB[12]])
+kineTable.append([AzzB[0],AzzB[6], AzzB[7], AzzB[8],AzzB[9],AzzB[10],AzzB[11],AzzB[12]])
+kineTable.append([AzzC[0],AzzC[1], AzzC[2], AzzC[3],AzzC[4],AzzC[5], AzzC[11],AzzC[12]])
+kineTable.append([AzzC[0],AzzC[6], AzzC[7], AzzC[8],AzzC[9],AzzC[10],AzzC[11],AzzC[12]])
+
+kineTable.append([b1A[0],b1A[1], b1A[2], b1A[3],b1A[4],b1A[5], b1A[11],b1A[12]])
+kineTable.append([b1A[0],b1A[6], b1A[7], b1A[8],b1A[9],b1A[10],b1A[11],b1A[12]])
+kineTable.append([b1B[0],b1B[1], b1B[2], b1B[3],b1B[4],b1B[5], b1B[11],b1B[12]])
+kineTable.append([b1B[0],b1B[6], b1B[7], b1B[8],b1B[9],b1B[10],b1B[11],b1B[12]])
+kineTable.append([b1C[0],b1C[1], b1C[2], b1C[3],b1C[4],b1C[5], b1C[11],b1C[12]])
+kineTable.append([b1C[0],b1C[6], b1C[7], b1C[8],b1C[9],b1C[10],b1C[11],b1C[12]])
+
+print(tabulate(kineTable, headers=["Setting Name","Spec.","E0 (GeV)", "Q^2 (GeV^2)", "E' (GeV)", "Theta (deg)", "Run Time (PAC)","Run Time (Real)"],tablefmt="grid"),file=outFile)
+
+print('Creating Run Plan...')
+print('\n\n\nRun plan:\n',file=outFile)
+
+
+
+
+# define the events and their durations in seconds
+events = [
+    ("Vector+ Spin-Up", t_vecSpinUp.total_seconds(),
+     "Azz-A", AzzAReal.total_seconds()),
+    # ("Physics Running", 14400),
+    # ("Anneals", 600),
+    # ("Tpol", 10),
+    # ("Tunpol", 30),
+]
+
+# initialize variables
+table_data = []
+runStartTime = datetime.datetime(2025, 1, 1, 0, 0, 0)
+# current_time = runStartTime # This sets the first day to "Day 0"
+current_time = runStartTime + datetime.timedelta(hours=24) # This sets the first day to "Day 1"
+tpol_count = 0
+physics_running_duration = datetime.timedelta(seconds=0)
+phys_tot = datetime.timedelta(seconds=0)
+overhead_tot = datetime.timedelta(seconds=0)
+beam_tot = datetime.timedelta(seconds=0)
+
+
+def createEvent(event,duration,spec,concur,beam,overhead,phys):
+    global phys_tot
+    global beam_tot
+    global overhead_tot
+    global current_time
+    global table_data
+    global last_concur
+    global concur_dur
+    durTime = str(duration)
+    if not last_concur:
+        if beam:
+            beam_tot += duration
+            beamStr = "On"
+        else:
+            beamStr = "Off"
+        if overhead:
+            overhead_tot += duration
+        if phys:
+            phys_tot += duration
+        if concur:
+            concur_dur = duration
+    else:
+        if beam:
+            beamStr = "On"
+        else:
+            beamStr = "Off"
+    if last_concur and (not concur):
+        current_time += concur_dur
+        if overhead:
+            overhead_tot += concur_dur
+        if phys:
+            phys_tot += concur_dur
+    event_start_time = current_time
+    # ["Day", "Start Time", "Duration", "Event", "Concurrent","Setting","Beam","Beam Time","Phys. Time","Overhead Time"]
+    table_data.append([
+        (current_time-runStartTime).days,
+        event_start_time.strftime("%H:%M:%S"),
+        durTime,
+        event,
+        concur,
+        spec,
+        beamStr,
+        beam_tot,
+        phys_tot,
+        overhead_tot
+    ])
+    if concur:
+        last_concur = True
+    else:
+        last_concur = False
+        current_time += duration
+
+
+
+# Time between anneals: t_btw_anneal
+# Time between Vec.Pol. Change: t_btw_vecSpinUp
+# Material Change: t_matChange
+# Vec.Pol. Spin-Up: t_vecSpinUp
+# TE: t_TE
+# Packing Fraction/Dilution: t_pf
+# BCM Cal.: t_BCM
+# Optics: t_optics
+# Linac Change: t_linacChange
+# Spec. Change: t_specChange
+# Ten.Pol. Enh: t_to_Pzz
+# Ten.Pol. Zero: t_to_0
+# Time Between Ten.Pol. Change: dt_between_Pzz_change
+
+last_concur = False
+# createEvent(event,duration,spec,concur,beam,overhead,phys)
+createEvent("LINAC Change",t_linacChange,AzzA[0],True,False,True,False)
+createEvent("TE",t_TE,AzzA[0],True,False,True,False)
+createEvent("Spectro. Change",t_specChange,AzzA[0],True,False,True,False)
+createEvent("Vec.Pol. + Spin-up",t_vecSpinUp,AzzA[0],False,False,True,False)
+createEvent("BCM Cal.",t_BCM,AzzA[0],False,True,True,False)
+createEvent("Optics Run",t_optics,AzzA[0],False,True,True,False)
+createEvent("Dilution/PF Run",t_pf,AzzA[0],False,True,True,False)
+
+
+
+
+
+
+
+
+
+
+
+# # loop over each event
+# for event, duration in events:
+#     # initialize variables for this event
+#     event_start_time = current_time
+#     cumulative_time = datetime.timedelta(seconds=0)
+
+
+
+
+#     # add rows to the table for Tpol and Tunpol sub-events during Physics Running
+#     if event == "Physics Running":
+#         for i in range(duration):
+#             if i % 600 == 0:
+#                 tpol_count += 1
+#                 tpol_start_time = current_time
+#                 table_data.append([
+#                     " ",
+#                     tpol_start_time.strftime("%H:%M:%S"),
+#                     "00:00:10",
+#                     "Tpol",
+#                     "",
+#                 ])
+#                 current_time += datetime.timedelta(seconds=10)
+#                 physics_running_duration += datetime.timedelta(seconds=10)
+#                 if physics_running_duration >= datetime.timedelta(hours=4):
+#                     break
+#                 table_data.append([
+#                     " ",
+#                     current_time.strftime("%H:%M:%S"),
+#                     "00:00:30",
+#                     "Tunpol",
+#                     "",
+#                 ])
+#                 current_time += datetime.timedelta(seconds=20)
+#                 physics_running_duration += datetime.timedelta(seconds=20)
+#                 if physics_running_duration >= datetime.timedelta(hours=4):
+#                     break
+#             else:
+#                 current_time += datetime.timedelta(seconds=1)
+#                 physics_running_duration += datetime.timedelta(seconds=1)
+#                 if physics_running_duration >= datetime.timedelta(hours=4):
+#                     break
+
+#     # for non-Physics Running events, just add one row to the table
+#     else:
+#         current_time += datetime.timedelta(seconds=duration)
+#         cumulative_time += datetime.timedelta(seconds=duration)
+#         if event == "Physics Running":
+#             cumulative_time += physics_running_duration
+#             physics_running_duration = datetime.timedelta(seconds=0)
+#         table_data.append([
+#             (current_time - cumulative_time).strftime("%d"),
+#             event_start_time.strftime("%H:%M:%S"),
+#             str(datetime.timedelta(seconds=duration)),
+#             event,
+#             str(cumulative_time),
+#         ])
+
+# print the table
+print('Writing Run Plan...')
+# print(tabulate(table_data, headers=["Day", "Start Time", "Duration", "Event", "Cumulative Time"],tablefmt="grid"))
+print(tabulate(table_data, headers=["Day", "Start Time", "Duration", "Event","Concurrent", "Setting","Beam","Beam Time","Phys. Time","Overhead Time"],tablefmt="grid"),file=outFile)
+
+
+outFile.close()
+print('All done!')
