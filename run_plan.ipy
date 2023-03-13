@@ -186,7 +186,7 @@ physics_running_duration = datetime.timedelta(seconds=0)
 phys_tot = datetime.timedelta(seconds=0)
 overhead_tot = datetime.timedelta(seconds=0)
 beam_tot = datetime.timedelta(seconds=0)
-
+setting_tot = datetime.timedelta(seconds=0)
 
 def createEvent(event,duration,spec,concur,beam,overhead,phys):
     global phys_tot
@@ -196,6 +196,13 @@ def createEvent(event,duration,spec,concur,beam,overhead,phys):
     global table_data
     global last_concur
     global concur_dur
+    global kine_tot
+    global tenPolChg_tot
+    evtType = ""
+    silence = False
+    if tenPolSilence:
+        if ("Ten.Pol." in event) or (duration==dt_between_Pzz_change):
+            silence = True
     durTime = str(duration)
     if not last_concur:
         if beam:
@@ -207,6 +214,7 @@ def createEvent(event,duration,spec,concur,beam,overhead,phys):
             overhead_tot += duration
         if phys:
             phys_tot += duration
+            kine_tot += duration
         if concur:
             concur_dur = duration
     else:
@@ -220,20 +228,29 @@ def createEvent(event,duration,spec,concur,beam,overhead,phys):
             overhead_tot += concur_dur
         if phys:
             phys_tot += concur_dur
+            kine_tot += concur_dur
+    if phys:
+        evtType += "Phys."
+    if overhead:
+        evtType += "O.H."
+    if concur:
+        evtType += ", Concurrent"
     event_start_time = current_time
-    # ["Day", "Start Time", "Duration", "Event", "Concurrent","Setting","Beam","Beam Time","Phys. Time","Overhead Time"]
-    table_data.append([
-        (current_time-runStartTime).days,
-        event_start_time.strftime("%H:%M:%S"),
-        durTime,
-        event,
-        concur,
-        spec,
-        beamStr,
-        beam_tot,
-        phys_tot,
-        overhead_tot
-    ])
+    # ["Day", "Start Time", "Duration", "Event", "Type","Setting","Beam","Kine Time","Beam Time","Phys. Time","Overhead Time"]
+    if not silence:
+        table_data.append([
+            (current_time-runStartTime).days,
+            event_start_time.strftime("%H:%M:%S"),
+            durTime,
+            event,
+            evtType,
+            spec,
+            beamStr,
+            kine_tot,
+            beam_tot,
+            phys_tot,
+            overhead_tot
+        ])
     if concur:
         last_concur = True
     else:
@@ -257,6 +274,13 @@ def createEvent(event,duration,spec,concur,beam,overhead,phys):
 # Time Between Ten.Pol. Change: dt_between_Pzz_change
 
 last_concur = False
+
+# tenPolSilence = True
+tenPolSilence = False
+
+# vvvv Azz-A Setting vvvv
+kine_tot = datetime.timedelta(seconds=0)
+
 # createEvent(event,duration,spec,concur,beam,overhead,phys)
 createEvent("LINAC Change",t_linacChange,AzzA[0],True,False,True,False)
 createEvent("TE",t_TE,AzzA[0],True,False,True,False)
@@ -266,8 +290,32 @@ createEvent("BCM Cal.",t_BCM,AzzA[0],False,True,True,False)
 createEvent("Optics Run",t_optics,AzzA[0],False,True,True,False)
 createEvent("Dilution/PF Run",t_pf,AzzA[0],False,True,True,False)
 
+cntTenEnh = 0
+cntTen0 = 0
+tenPolChg_tot = datetime.timedelta(seconds=0)
+before_prod_time = current_time
+kine_before_prod = kine_tot
+while kine_tot < AzzAReal:
+    createEvent("Ten.Pol.Enh.",t_to_Pzz,AzzA[0],False,True,True,False)
+    cntTenEnh += 1
+    tenPolChg_tot += t_to_Pzz
+    createEvent("Production",dt_between_Pzz_change,AzzA[0],False,True,False,True)
+    createEvent("Ten.Pol. to 0",t_to_0,AzzA[0],False,True,True,False)
+    cntTen0 += 1
+    tenPolChg_tot += t_to_0
+    createEvent("Production",dt_between_Pzz_change,AzzA[0],False,True,False,True)
 
+if tenPolSilence:
+    kine_tot = kine_before_prod
+    current_time = before_prod_time
+    physTime = AzzAReal - tenPolChg_tot
+    createEvent("Production",physTime,AzzA[0],False,True,False,True)
+    PzzChanges = cntTenEnh + cntTen0
+    PzzChgStr = "+ " + str(PzzChanges) + " Pzz Changes"
+    createEvent(PzzChgStr,tenPolChg_tot,AzzA[0],False,True,True,False)
+    
 
+# ^^^^ Azz-A Setting ^^^^
 
 
 
@@ -337,7 +385,7 @@ createEvent("Dilution/PF Run",t_pf,AzzA[0],False,True,True,False)
 # print the table
 print('Writing Run Plan...')
 # print(tabulate(table_data, headers=["Day", "Start Time", "Duration", "Event", "Cumulative Time"],tablefmt="grid"))
-print(tabulate(table_data, headers=["Day", "Start Time", "Duration", "Event","Concurrent", "Setting","Beam","Beam Time","Phys. Time","Overhead Time"],tablefmt="grid"),file=outFile)
+print(tabulate(table_data, headers=["Day", "Start Time", "Duration", "Event","Type", "Kine.","Beam","Kine. Time","Beam Time","Phys. Time","Overhead Time"],tablefmt="grid"),file=outFile)
 
 
 outFile.close()
