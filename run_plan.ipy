@@ -32,6 +32,19 @@ outStr = "Assumptions for Scheduling:     (All times given in HH:MM:SS)\n"
 #
 #   In order to determine how often anneals occur in time, we need some information.
 
+nTgtCups = 3
+
+outStr += '   Target Cup Configuration: ' + str(nTgtCups) + ' cups\n'
+outStr +=     '      | ||\n'
+outStr +=     '      |/  \\\n'
+if nTgtCups>=1:
+    outStr += '      |ND3 \n'
+    outStr += '      |C \n'
+for i in range(1,nTgtCups):
+    outStr += '      |ND3 \n'
+outStr +=     '      |___ \n\n'
+
+
 b_eff = 0.5 # Beam efficiency scaled to 1
 I = 85 # nA = beam current
 r = 1.5 # cm = target cup radius
@@ -42,20 +55,20 @@ e = d*A/b_eff # e/anneal = # of electrons between anneals
 eps = 1.602e-10 # nA = current of 1 e/s
 t_s = round(e*eps/I) # s = time per anneal in seconds @ 100% efficiency
 t_h = t_s/(60*60) # h = time per anneal in hours @ 100% efficiency
-t_btw_anneal = datetime.timedelta(seconds=t_s)
+t_btw_cupChange = datetime.timedelta(seconds=t_s)
+t_cupChange = datetime.timedelta(minutes=10)
+t_btw_anneal = datetime.timedelta(seconds=(nTgtCups*t_s))
 t_anneal = datetime.timedelta(hours=4)
 
 outStr += '   Beam Current: ' + str(I) +' nA\n'
 outStr += '   Beam Efficiency: ' + str(b_eff) +' (Scaled to 1)\n'
 outStr += '   Target Cup Radius: ' + str(r) + ' cm\n'
 outStr += '   Dose between anneals: ' + '{:.2e}'.format(d) + ' e/cm^2\n'
-outStr += '   Time Between Anneals: '+ str(t_btw_anneal) + '\n'
+outStr += '   Time Between Anneals for ' + str(nTgtCups) + ' Cups: '+ str(t_btw_anneal) + '\n'
 outStr += '   Time required for Anneal: '+ str(t_anneal) + '\n'
+outStr += '   Time required for Cup Change: '+ str(t_cupChange) + '\n'
+outStr += '   Time Between Cup Changes: '+ str(t_btw_cupChange) + '\n'
 
-# print('','Beam Current:',I,'nA')
-# print('','Target Cup Radius:',r,'cm')
-# print('','Dose between anneals:','{:.2e}'.format(d),'e/cm^2')
-# print('','Time Between Anneals:',round(t_h,2),'hours')
 
 t_matChange = datetime.timedelta(hours=(4))
 d_matChange = 1e17 # e/cm^2 = dose between material changes
@@ -142,7 +155,6 @@ b1APAC = datetime.timedelta(days=(6))
 b1BPAC = datetime.timedelta(days=(9))
 b1CPAC = datetime.timedelta(days=(15))
 AzzAReal = datetime.timedelta(days=(2*1))
-# AzzAReal = datetime.timedelta(days=(30*1)) # !!!!!!!! THIS IS A TEST! REMOVE LINE WHEN TEST IS COMPLETED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 AzzBReal = datetime.timedelta(days=(2*8))
 AzzCReal = datetime.timedelta(days=(2*25))
 b1AReal = datetime.timedelta(days=(2*6))
@@ -200,6 +212,7 @@ phys_tot = datetime.timedelta(seconds=0)
 overhead_tot = datetime.timedelta(seconds=0)
 beam_tot = datetime.timedelta(seconds=0)
 setting_tot = datetime.timedelta(seconds=0)
+currentCup = 1
 
 def createEvent(event,duration,spec,concur,beam,overhead,phys):
     global phys_tot
