@@ -32,21 +32,25 @@ outStr = "Assumptions for Scheduling:     (All times given in HH:MM:SS)\n"
 #
 #   In order to determine how often anneals occur in time, we need some information.
 
+b_eff = 0.5 # Beam efficiency scaled to 1
 I = 85 # nA = beam current
 r = 1.5 # cm = target cup radius
 #d = 5e15 # e/cm^2 = dose between anneals
 d = 4e15 # e/cm^2 = dose between anneals
 A = np.pi*r**2 #cm^2 = area of face of target cup
-e = d*A # e/anneal = # of electrons between anneals
+e = d*A/b_eff # e/anneal = # of electrons between anneals
 eps = 1.602e-10 # nA = current of 1 e/s
 t_s = round(e*eps/I) # s = time per anneal in seconds @ 100% efficiency
 t_h = t_s/(60*60) # h = time per anneal in hours @ 100% efficiency
 t_btw_anneal = datetime.timedelta(seconds=t_s)
+t_anneal = datetime.timedelta(hours=4)
 
 outStr += '   Beam Current: ' + str(I) +' nA\n'
+outStr += '   Beam Efficiency: ' + str(b_eff) +' (Scaled to 1)\n'
 outStr += '   Target Cup Radius: ' + str(r) + ' cm\n'
 outStr += '   Dose between anneals: ' + '{:.2e}'.format(d) + ' e/cm^2\n'
 outStr += '   Time Between Anneals: '+ str(t_btw_anneal) + '\n'
+outStr += '   Time required for Anneal: '+ str(t_anneal) + '\n'
 
 # print('','Beam Current:',I,'nA')
 # print('','Target Cup Radius:',r,'cm')
@@ -54,7 +58,11 @@ outStr += '   Time Between Anneals: '+ str(t_btw_anneal) + '\n'
 # print('','Time Between Anneals:',round(t_h,2),'hours')
 
 t_matChange = datetime.timedelta(hours=(4))
+d_matChange = 1e17 # e/cm^2 = dose between material changes
+t_btw_matChange = datetime.timedelta(seconds=(round(d_matChange*A*eps/I/b_eff)))
 outStr += '   Time required for target material change: ' + str(t_matChange) + '\n'
+outStr += '   Dose between target material changes: ' + '{:.2e}'.format(d_matChange) + ' e/cm^2\n'
+outStr += '   Time between target material changse: ' + str(t_btw_matChange) + '\n'
 
 # ^^^^ Annealing ^^^^
 
@@ -69,7 +77,7 @@ outStr += '   Time required for target material change: ' + str(t_matChange) + '
 # During the 3 spin-ups in Hall B in Feb/March 2023, they waited 7, 8, and 3 hours.
 
 t_vecSpinUp = datetime.timedelta(hours=6) # Estimates range from 3-8 hours. Taking 6 as average of above.
-t_btw_vecSpinUp = datetime.timedelta(hours=48)
+t_btw_vecSpinUp = datetime.timedelta(days=2)
 t_TE = datetime.timedelta(hours=4)
 t_pf = datetime.timedelta(hours=1)
 outStr += '   Time required for vector pol. spin-ups: ' + str(t_vecSpinUp) + '\n'
@@ -80,11 +88,15 @@ outStr += '   Time required for packing fraction/dilution runs: ' + str(t_pf) + 
 
 # vvvv Beam Overhead vvvv
 t_BCM = datetime.timedelta(hours=2)
+t_btw_BCM = datetime.timedelta(days=7.5)
 t_optics = datetime.timedelta(hours=4)
+t_btw_optics = datetime.timedelta(days=20)
 t_linacChange = datetime.timedelta(hours=8)
 t_specChange = datetime.timedelta(hours=2)
 outStr += '   Time required for BCM calibration: ' + str(t_BCM) + '\n'
+outStr += '   Beam time between BCM calibrations: ' + str(t_btw_BCM) + '\n'
 outStr += '   Time required for each Optics run: ' + str(t_optics) + '\n'
+outStr += '   Beam time between Optics runs: ' + str(t_btw_optics) + '\n'
 outStr += '   Time required for each Linac change: ' + str(t_linacChange) + '\n'
 outStr += '   Time required for each Spectrometer Momentum/angle change: ' + str(t_specChange) + '\n'
 # ^^^^ Beam Overhead ^^^^
@@ -105,7 +117,7 @@ outStr += '   Time required for each Spectrometer Momentum/angle change: ' + str
 
 t_to_0 = datetime.timedelta(seconds=10)
 t_to_Pzz = datetime.timedelta(seconds=30)
-dt_between_Pzz_change = datetime.timedelta(minutes=10)
+dt_between_Pzz_change = datetime.timedelta(minutes=30)
 
 outStr += '   Time to Tensor Enhance: ' + str(t_to_Pzz) + "\n"
 outStr += '   Time to Tensor Unpol: ' + str(t_to_0) + "\n"
@@ -130,6 +142,7 @@ b1APAC = datetime.timedelta(days=(6))
 b1BPAC = datetime.timedelta(days=(9))
 b1CPAC = datetime.timedelta(days=(15))
 AzzAReal = datetime.timedelta(days=(2*1))
+# AzzAReal = datetime.timedelta(days=(30*1)) # !!!!!!!! THIS IS A TEST! REMOVE LINE WHEN TEST IS COMPLETED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 AzzBReal = datetime.timedelta(days=(2*8))
 AzzCReal = datetime.timedelta(days=(2*25))
 b1AReal = datetime.timedelta(days=(2*6))
@@ -198,69 +211,206 @@ def createEvent(event,duration,spec,concur,beam,overhead,phys):
     global concur_dur
     global kine_tot
     global tenPolChg_tot
-    evtType = ""
-    silence = False
-    if tenPolSilence:
-        if ("Ten.Pol." in event) or (duration==dt_between_Pzz_change):
-            silence = True
-    durTime = str(duration)
-    if not last_concur:
-        if beam:
-            beam_tot += duration
-            beamStr = "On"
+    global kine_with_pol
+    global totAllowedKineTime
+    global tenPolChg_tot
+    global bcmTimeCheck
+    global last_bcm
+    global opticsTimeCheck
+    global vecSpinFlipTimeCheck
+    global annealTimeCheck
+    global matChangeTimeCheck
+    global TETimeCheck
+    global pfTimeCheck
+    global isSummary
+    isKine = False
+    if ("Production" in event) or ("Ten.Pol. to 0" in event) or ("Ten.Pol.Enh." in event) or ("Pzz Changes" in event):
+        isKine = True
+    # print(event,'isKine =',isKine)
+    if isKine and ((kine_with_pol + duration)>totAllowedKineTime):
+        duration = totAllowedKineTime - kine_with_pol
+    if duration is datetime.timedelta(seconds=0):
+        return
+    if not isSummary:
+        if "TE" in event:
+            TETimeCheck = datetime.timedelta(seconds=0)
+        elif beam:
+            TETimeCheck += duration
+        if "Dilution/PF Run" in event:
+            pfTimeCheck = datetime.timedelta(seconds=0)
+        elif beam:
+            pfTimeCheck += duration
+        if "Vec.Pol. + Spin-up" in event:
+            vecSpinFlipTimeCheck = datetime.timedelta(seconds=0)
+        elif beam:
+            vecSpinFlipTimeCheck += duration
+        if "Vec.Pol. - Spin-up" in event:
+            vecSpinFlipTimeCheck = datetime.timedelta(seconds=0)
+        elif beam:
+            vecSpinFlipTimeCheck += duration
+        if "Optics Run" in event:
+            opticsTimeCheck = datetime.timedelta(seconds=0)
         else:
-            beamStr = "Off"
-        if overhead:
-            overhead_tot += duration
+            opticsTimeCheck += duration 
+        if "Tgt. Anneal" in event:   
+            annealTimeCheck = datetime.timedelta(seconds=0)
+        else:
+            if beam:
+                annealTimeCheck += duration
+        if "Tgt.Mat. Change" in event:
+            matChangeTimeCheck = datetime.timedelta(seconds=0)
+        elif beam:
+            matChangeTimeCheck += duration
+        if "BCM Cal." in event:
+            bcmTimeCheck = datetime.timedelta(seconds=0)
+        else:
+            bcmTimeCheck += duration
+    # print('bcmTimeCheck:',bcmTimeCheck,kine_with_pol)
+    if "Ten.Pol." in event:
+        tenPolChg_tot += duration
+    if duration is not datetime.timedelta(seconds=0):
+        evtType = ""
+        silence = False
+        # if ("Ten.Pol." in event) or (duration==dt_between_Pzz_change):
+        if isKine:
+            kine_with_pol += duration
+            if tenPolSilence:
+                silence = True
+        durTime = str(duration)
+        if durTime=="0:00:00":
+            return
+        if not last_concur:
+            if beam:
+                beam_tot += duration
+                beamStr = "On"
+            else:
+                beamStr = "Off"
+            if overhead:
+                overhead_tot += duration
+            if phys:
+                phys_tot += duration
+            if isKine:
+                kine_tot += duration
+            if concur:
+                concur_dur = duration
+        else:
+            if beam:
+                beamStr = "On"
+            else:
+                beamStr = "Off"
+        if last_concur and (not concur):
+            current_time += concur_dur
+            if overhead:
+                overhead_tot += concur_dur
+            if phys:
+                phys_tot += concur_dur
+                kine_tot += concur_dur
         if phys:
-            phys_tot += duration
-            kine_tot += duration
+            evtType += "Phys."
+        if overhead:
+            evtType += "O.H."
         if concur:
-            concur_dur = duration
-    else:
-        if beam:
-            beamStr = "On"
+            evtType += ", Concurrent"
+        event_start_time = current_time
+        # ["Day", "Start Time", "Duration", "Event", "Type","Setting","Beam","Kine Time","Beam Time","Phys. Time","Overhead Time"]
+        if not silence:
+            table_data.append([
+                (current_time-runStartTime).days,
+                event_start_time.strftime("%H:%M:%S"),
+                durTime,
+                event,
+                evtType,
+                spec,
+                beamStr,
+                kine_tot,
+                beam_tot,
+                phys_tot,
+                overhead_tot
+            ])
+        if concur:
+            last_concur = True
         else:
-            beamStr = "Off"
-    if last_concur and (not concur):
-        current_time += concur_dur
-        if overhead:
-            overhead_tot += concur_dur
-        if phys:
-            phys_tot += concur_dur
-            kine_tot += concur_dur
-    if phys:
-        evtType += "Phys."
-    if overhead:
-        evtType += "O.H."
-    if concur:
-        evtType += ", Concurrent"
-    event_start_time = current_time
-    # ["Day", "Start Time", "Duration", "Event", "Type","Setting","Beam","Kine Time","Beam Time","Phys. Time","Overhead Time"]
-    if not silence:
-        table_data.append([
-            (current_time-runStartTime).days,
-            event_start_time.strftime("%H:%M:%S"),
-            durTime,
-            event,
-            evtType,
-            spec,
-            beamStr,
-            kine_tot,
-            beam_tot,
-            phys_tot,
-            overhead_tot
-        ])
-    if concur:
-        last_concur = True
-    else:
-        last_concur = False
-        current_time += duration
+            last_concur = False
+            current_time += duration
+    if "BCM Cal." in event:
+        last_bcm = beam_tot
+    # print('Silence =',silence)
+
+def prepSimplifyOutput(kineTime):
+    global cntTenEnh
+    global cntTen0
+    global tenPolChg_tot
+    global before_prod_time
+    global current_time
+    global kine_before_prod
+    global kine_tot
+    global kine_with_pol
+    global kine_with_pol_before
+    global totAllowedKineTime 
+    global lastPhys
+    global before_beam_time
+    global beam_tot
+    cntTenEnh = 0
+    cntTen0 = 0
+    tenPolChg_tot = datetime.timedelta(seconds=0)
+    before_prod_time = current_time
+    kine_before_prod = kine_tot
+    # kine_with_pol = datetime.timedelta(seconds=0)
+    kine_with_pol_before = kine_with_pol
+    totAllowedKineTime = kineTime
+    lastPhys = phys_tot
+    before_beam_time = beam_tot
+
+
+def simplifyOutput():
+    global phys_tot
+    global beam_tot
+    global overhead_tot
+    global current_time
+    global table_data
+    global last_concur
+    global concur_dur
+    global kine_tot
+    global tenPolChg_tot
+    global kine_with_pol
+    global totAllowedKineTime
+    global tenPolChg_tot
+    global bcmTimeCheck
+    global tenPolSilence
+    global cntTenEnh
+    global cntTen0
+    global before_prod_time
+    global lastPhys
+    global before_beam_time
+    global isSummary
+    global thisSpec
+    prevTenPolSilence = tenPolSilence
+    if tenPolSilence:
+        tenPolSilence = False
+        isSummary = True
+        beam_tot = before_beam_time
+        kine_with_pol= kine_with_pol_before
+        kine_tot = kine_before_prod
+        current_time = before_prod_time
+        # physTime = AzzAReal - tenPolChg_tot
+        physTime = phys_tot - lastPhys
+        phys_tot = lastPhys
+        # physTime = lastPhys
+        # print('phystime:',physTime)
+        createEvent("Production",physTime,thisSpec,False,True,False,True)
+        PzzChanges = cntTenEnh + cntTen0
+        PzzChgStr = "+ " + str(PzzChanges) + " Pzz Changes"
+        createEvent(PzzChgStr,tenPolChg_tot,thisSpec,False,True,True,False)
+        tenPolSilence = prevTenPolSilence
+        cntTenEnh = 0
+        cntTen0 = 0
+        tenPolChg_tot = datetime.timedelta(seconds=0)
+        before_prod_time = current_time
+        isSummary = False
+        # print(AzzAReal,kine_with_pol)
 
 
 
-# Time between anneals: t_btw_anneal
-# Time between Vec.Pol. Change: t_btw_vecSpinUp
 # Material Change: t_matChange
 # Vec.Pol. Spin-Up: t_vecSpinUp
 # TE: t_TE
@@ -272,50 +422,122 @@ def createEvent(event,duration,spec,concur,beam,overhead,phys):
 # Ten.Pol. Enh: t_to_Pzz
 # Ten.Pol. Zero: t_to_0
 # Time Between Ten.Pol. Change: dt_between_Pzz_change
+# Time Between BCM Calibrations: t_btw_BCM
+# Time Between Optics Runs: t_btw_optics
+# Time Between Material Changes: t_btw_matChange
+# Time Between anneals: t_btw_anneal
+# Time Between Vec.Pol. Change: t_btw_vecSpinUp
 
 last_concur = False
+isSummary = False
 
-# tenPolSilence = True
-tenPolSilence = False
+tenPolSilence = True
+# tenPolSilence = False
 
-# vvvv Azz-A Setting vvvv
-kine_tot = datetime.timedelta(seconds=0)
+# Full Run
+allKineTime = [AzzA[12],AzzB[12],AzzC[12],b1A[12],b1B[12],b1C[12]]
+specSetting = [AzzA[0],AzzB[0],AzzC[0],b1A[0],b1B[0],b1C[0]]
 
-# createEvent(event,duration,spec,concur,beam,overhead,phys)
-createEvent("LINAC Change",t_linacChange,AzzA[0],True,False,True,False)
-createEvent("TE",t_TE,AzzA[0],True,False,True,False)
-createEvent("Spectro. Change",t_specChange,AzzA[0],True,False,True,False)
-createEvent("Vec.Pol. + Spin-up",t_vecSpinUp,AzzA[0],False,False,True,False)
-createEvent("BCM Cal.",t_BCM,AzzA[0],False,True,True,False)
-createEvent("Optics Run",t_optics,AzzA[0],False,True,True,False)
-createEvent("Dilution/PF Run",t_pf,AzzA[0],False,True,True,False)
+# Azz Only
+# allKineTime = [AzzA[12],AzzB[12],AzzC[12]]
+# specSetting = [AzzA[0],AzzB[0],AzzC[0]]
 
-cntTenEnh = 0
-cntTen0 = 0
-tenPolChg_tot = datetime.timedelta(seconds=0)
-before_prod_time = current_time
-kine_before_prod = kine_tot
-while kine_tot < AzzAReal:
-    createEvent("Ten.Pol.Enh.",t_to_Pzz,AzzA[0],False,True,True,False)
-    cntTenEnh += 1
-    tenPolChg_tot += t_to_Pzz
-    createEvent("Production",dt_between_Pzz_change,AzzA[0],False,True,False,True)
-    createEvent("Ten.Pol. to 0",t_to_0,AzzA[0],False,True,True,False)
-    cntTen0 += 1
-    tenPolChg_tot += t_to_0
-    createEvent("Production",dt_between_Pzz_change,AzzA[0],False,True,False,True)
+# b1 Only
+# allKineTime = [b1A[12],b1B[12],b1C[12]]
+# specSetting = [b1A[0],b1B[0],b1C[0]]
 
-if tenPolSilence:
-    kine_tot = kine_before_prod
-    current_time = before_prod_time
-    physTime = AzzAReal - tenPolChg_tot
-    createEvent("Production",physTime,AzzA[0],False,True,False,True)
-    PzzChanges = cntTenEnh + cntTen0
-    PzzChgStr = "+ " + str(PzzChanges) + " Pzz Changes"
-    createEvent(PzzChgStr,tenPolChg_tot,AzzA[0],False,True,True,False)
+for i in range(0,len(specSetting)):
+    
+    thisSpec = specSetting[i]
+    print("Writing plan for",thisSpec)
+    thisKineTime = allKineTime[i]
+    if (thisSpec is b1B[0]) or (thisSpec is b1C[0]):
+        needLinacChange = False
+    else:
+        needLinacChange = True
+    if (thisSpec is AzzA[0]):
+        t_btw_vecSpinUp = datetime.timedelta(hours=12)
+    else:
+        t_btw_vecSpinUp = datetime.timedelta(days=2)
+
+    kine_tot = datetime.timedelta(seconds=0)
+    kine_with_pol = datetime.timedelta(seconds=0)
+    bcmTimeCheck = datetime.timedelta(seconds=0)
+    opticsTimeCheck = datetime.timedelta(seconds=0)
+    vecSpinFlipTimeCheck = datetime.timedelta(seconds=0)
+    annealTimeCheck = datetime.timedelta(seconds=0)
+    matChangeTimeCheck = datetime.timedelta(seconds=0)
+    TETimeCheck = datetime.timedelta(seconds=0)
+    pfTimeCheck = datetime.timedelta(seconds=0)
+    
+    # createEvent(event,duration,spec,concur,beam,overhead,phys)
+    if needLinacChange:
+        createEvent("LINAC Change",t_linacChange,thisSpec,True,False,True,False)
+    createEvent("Spectro. Change",t_specChange,thisSpec,True,False,True,False)
+    vecPolDir = "+"
+    createEvent("Vec.Pol. "+vecPolDir+" Spin-up",t_vecSpinUp,thisSpec,False,False,True,False)
+    createEvent("BCM Cal.",t_BCM,thisSpec,False,True,True,False)
+    createEvent("Optics Run",t_optics,thisSpec,False,True,True,False)
+    createEvent("Dilution/PF Run",t_pf,thisSpec,False,True,True,False)
+    createEvent("TE",t_TE,thisSpec,True,False,True,False)
+    
+    prepSimplifyOutput(thisKineTime)
+    while kine_with_pol < thisKineTime:
+        # if kine_with_pol >= t_btw_vecSpinUp:
+        createEvent("Ten.Pol.Enh.",t_to_Pzz,thisSpec,False,True,True,False)
+        cntTenEnh += 1
+        # tenPolChg_tot += t_to_Pzz
+        createEvent("Production",dt_between_Pzz_change,thisSpec,False,True,False,True)
+        createEvent("Ten.Pol. to 0",t_to_0,thisSpec,False,True,True,False)
+        cntTen0 += 1
+        # tenPolChg_tot += t_to_0
+        createEvent("Production",dt_between_Pzz_change,thisSpec,False,True,False,True)
+        # print(AzzAReal,kine_with_pol)
+        if bcmTimeCheck > t_btw_BCM:
+            simplifyOutput()
+            createEvent("BCM Cal.",t_BCM,thisSpec,False,True,True,False)
+            prepSimplifyOutput(thisKineTime)
+        if opticsTimeCheck > t_btw_optics:
+            simplifyOutput()
+            createEvent("Optics Run",t_optics,thisSpec,False,True,True,False)
+            prepSimplifyOutput(thisKineTime)
+        if vecSpinFlipTimeCheck > t_btw_vecSpinUp:       
+            simplifyOutput()
+            prepSimplifyOutput(thisKineTime)
+            if vecPolDir == "+":
+                vecPolDir = "-"
+            else:
+                vecPolDir = "+"
+            createEvent("Vec.Pol. "+vecPolDir+" Spin-up",t_vecSpinUp,thisSpec,False,False,True,False)
+        if annealTimeCheck > t_btw_anneal:
+            simplifyOutput()
+            prepSimplifyOutput(thisKineTime)
+            createEvent("Tgt. Anneal",t_anneal,thisSpec,False,False,True,False)
+        if matChangeTimeCheck > t_btw_matChange:
+            simplifyOutput()
+            prepSimplifyOutput(thisKineTime)
+            createEvent("Tgt.Mat. Change",t_matChange,thisSpec,False,False,True,False)
+    simplifyOutput()
+    createEvent("BCM Cal.",t_BCM,thisSpec,False,True,True,False)
+    createEvent("Optics Run",t_optics,thisSpec,False,True,True,False)
+    createEvent("Dilution/PF Run",t_pf,thisSpec,False,True,True,False)
+    createEvent("TE",t_TE,thisSpec,True,False,True,False)
+
+    
+    
+    
+    # global TETimeCheck
+    # global pfTimeCheck
+    
+    
+    
+    
     
 
-# ^^^^ Azz-A Setting ^^^^
+
+    
+
+
 
 
 
@@ -386,6 +608,28 @@ if tenPolSilence:
 print('Writing Run Plan...')
 # print(tabulate(table_data, headers=["Day", "Start Time", "Duration", "Event", "Cumulative Time"],tablefmt="grid"))
 print(tabulate(table_data, headers=["Day", "Start Time", "Duration", "Event","Type", "Kine.","Beam","Kine. Time","Beam Time","Phys. Time","Overhead Time"],tablefmt="grid"),file=outFile)
+# print(tabulate(table_data, headers=["Day", "Start Time", "Duration", "Event","Type", "Kine.","Beam","Kine. Time","Beam Time","Phys. Time","Overhead Time"]),file=outFile)
+
+
+physTimeStr = "Total Physics Time: " + str(phys_tot)
+ohTimeStr = "Total Overhead Time: " + str(overhead_tot)
+totTimeStr = "Grand Total Time: " + str(phys_tot+overhead_tot)
+
+beamTimeStr = "\nTotal Beam Time: " + str(beam_tot) + "\n"
+
+print('\n\n\nSummary:',file=outFile)
+print('For these experiments, we were allotted',file=outFile)
+print('Azz = 34 PAC Days + 11 OH Days   = 68 + 11   Real Days = 79   Real Days',file=outFile)
+print('b1  = 30 PAC Days + 10.8 OH Days = 60 + 10.8 Real Days = 70.8 Real Days',file=outFile)
+print('Physics Total = Azz + b1 = 128 days Real Time',file=outFile)
+print('Overhead Total = Azz + b1 = 21 days, 19:12:00 Real Time',file=outFile)
+print('Grand Total = Azz + b1 = 149 days, 19:12:00 Real Time',file=outFile)
+print('\n\nBased on this run plan, we expect to spend',file=outFile)
+print(physTimeStr,file=outFile)
+print(ohTimeStr,file=outFile)
+print(totTimeStr,file=outFile)
+# print(beamTimeStr,file=outFile)
+
 
 
 outFile.close()
